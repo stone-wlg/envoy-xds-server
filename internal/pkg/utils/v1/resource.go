@@ -32,6 +32,7 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 	var clusters []types.Resource
 	var routes []types.Resource
 	var listeners []types.Resource
+	var secrets []types.Resource
 
 	for _, peer := range peers {
 		if peer.PartyId == config.Party.Id {
@@ -50,10 +51,15 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 		}
 	}
 
+	for _, s := range MakeSecrets(tlsName, rootName) {
+		secrets = append(secrets, s)
+	}
+
 	snapshot, _ := cache.NewSnapshot(uuid.New().String(), map[resource.Type][]types.Resource{
 		resource.ClusterType:  clusters,
 		resource.RouteType:    routes,
 		resource.ListenerType: listeners,
+		resource.SecretType:   secrets,
 	})
 
 	return snapshot
@@ -69,7 +75,7 @@ func makeHTTP2Listener(config *XDSServerConfig, peer *Peer) *listener.Listener {
 	}
 
 	manager := &hcm.HttpConnectionManager{
-		CodecType:  hcm.HttpConnectionManager_HTTP2,
+		CodecType:  hcm.HttpConnectionManager_AUTO,
 		StatPrefix: peer.Type,
 		HttpFilters: []*hcm.HttpFilter{{
 			Name:       wellknown.Router,
@@ -82,7 +88,7 @@ func makeHTTP2Listener(config *XDSServerConfig, peer *Peer) *listener.Listener {
 			},
 		},
 		AccessLog: []*alf.AccessLog{{
-			Name: wellknown.HTTPGRPCAccessLog,
+			Name: "envoy.access_loggers.stdout",
 			ConfigType: &alf.AccessLog_TypedConfig{
 				TypedConfig: stdoutAccessLog,
 			},
@@ -129,7 +135,7 @@ func makeTCPListener(service *Service) *listener.Listener {
 			Hostname: service.Host,
 		},
 		AccessLog: []*alf.AccessLog{{
-			Name: wellknown.HTTPGRPCAccessLog,
+			Name: "envoy.access_loggers.stdout",
 			ConfigType: &alf.AccessLog_TypedConfig{
 				TypedConfig: stdoutAccessLog,
 			},
