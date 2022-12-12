@@ -2,8 +2,9 @@ server:
   id: pir
   port: 18001
   refresh_interval: 60
-  tls_cert: tls-cert
-  tls_validation_context: validation-context
+  sds_config_cluster_name: xds-cluster
+  tls_root_ca_default_name: tls-root-ca-default
+  tls_private_ca_default_name: tls-private-ca-default
 
 party:
   id: 1000
@@ -14,5 +15,5 @@ mysql:
   user: root
   password: root
   database: fedx-pir-1000
-  peer_sql: "SELECT party_id, type, host, port FROM peer WHERE is_deleted = FALSE"
-  service_sql: "SELECT party_id, type, host, port FROM service WHERE is_deleted = FALSE"  
+  peer_sql: "SELECT party_id, type, host, port, tls_root_ca, tls_private_key, tls_private_ca FROM peer WHERE is_deleted = FALSE"
+  service_sql: "SELECT party_id, type, host, port FROM service WHERE is_deleted = FALSE"

@@ -2,15 +2,18 @@ package utils
 
 type XDSServerConfig struct {
 	Server struct {
-		Id                   string `yaml:"id"`
-		Port                 uint32 `yaml:"port"`
-		RefreshInterval      uint64 `yaml:"refresh_interval"`
-		TlsCert              string `yaml:"tls_cert"`
-		TlsValidationContext string `yaml:"tls_validation_context"`
+		Id                      string `yaml:"id"`
+		Port                    uint32 `yaml:"port"`
+		RefreshInterval         uint64 `yaml:"refresh_interval"`
+		SdsConfigClusterName    string `yaml:"sds_config_cluster_name"`
+		TlsRootCaDefaultName    string `yaml:"tls_root_ca_default_name"`
+		TlsPrivateCaDefaultName string `yaml:"tls_private_ca_default_name"`
 	}
+
 	Party struct {
 		Id string `yaml:"id"`
 	}
+
 	Mysql struct {
 		Host       string `yaml:"host"`
 		Port       uint32 `yaml:"port"`
@@ -23,10 +26,13 @@ type XDSServerConfig struct {
 }
 
 type Peer struct {
-	PartyId string
-	Type    string
-	Host    string
-	Port    uint32
+	PartyId       string
+	Type          string
+	Host          string
+	Port          uint32
+	tlsRootCa     string
+	tlsPrivateCa  string
+	tlsPrivateKey string
 }
 
 type Service struct {

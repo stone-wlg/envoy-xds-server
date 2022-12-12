@@ -45,7 +45,7 @@ func GetPeers(sql string) []*Peer {
 
 	for rows.Next() {
 		var peer = Peer{}
-		err := rows.Scan(&peer.PartyId, &peer.Type, &peer.Host, &peer.Port)
+		err := rows.Scan(&peer.PartyId, &peer.Type, &peer.Host, &peer.Port, &peer.tlsRootCa, &peer.tlsPrivateKey, &peer.tlsPrivateCa)
 		if err != nil {
 			log.Printf("peer scan failed, err:%v\n", err)
 			return peers

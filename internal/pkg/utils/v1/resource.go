@@ -35,6 +35,18 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 	var secrets []types.Resource
 
 	for _, peer := range peers {
+		if peer.tlsRootCa != "" {
+			rootCaName := fmt.Sprintf("tls-root-ca-%s", peer.PartyId)
+			rootCaSecret := MakeRootCaSecret(rootCaName, peer.tlsRootCa)
+			secrets = append(secrets, rootCaSecret)
+		}
+
+		if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
+			tlsPrivateCaName := fmt.Sprintf("tls-private-ca-%s", peer.PartyId)
+			tlsPrivateCaSecret := MakePrivateCaSecret(tlsPrivateCaName, peer.tlsPrivateKey, peer.tlsPrivateCa)
+			secrets = append(secrets, tlsPrivateCaSecret)
+		}
+
 		if peer.PartyId == config.Party.Id {
 			listeners = append(listeners, makeHTTP2Listener(config, peer))
 			routes = append(routes, makeRouteConfig(peer.PartyId, peer.Type, services))
@@ -51,9 +63,10 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 		}
 	}
 
-	for _, s := range MakeSecrets(tlsName, rootName) {
-		secrets = append(secrets, s)
-	}
+	tlsRootCaDefaultSecret := MakeRootCaSecret(config.Server.TlsRootCaDefaultName, rootCert)
+	secrets = append(secrets, tlsRootCaDefaultSecret)
+	tlsPrivateCaDefaultSecret := MakePrivateCaSecret(config.Server.TlsPrivateCaDefaultName, privateKey, privateChain)
+	secrets = append(secrets, tlsPrivateCaDefaultSecret)
 
 	snapshot, _ := cache.NewSnapshot(uuid.New().String(), map[resource.Type][]types.Resource{
 		resource.ClusterType:  clusters,
@@ -83,7 +96,7 @@ func makeHTTP2Listener(config *XDSServerConfig, peer *Peer) *listener.Listener {
 		}},
 		RouteSpecifier: &hcm.HttpConnectionManager_Rds{
 			Rds: &hcm.Rds{
-				ConfigSource:    configSource(),
+				ConfigSource:    configSource("ads", ""),
 				RouteConfigName: name,
 			},
 		},
@@ -112,7 +125,7 @@ func makeHTTP2Listener(config *XDSServerConfig, peer *Peer) *listener.Listener {
 					},
 				},
 			},
-			TransportSocket: makeTransportSocketForDownstream(config),
+			TransportSocket: makeTransportSocketForDownstream(config, peer),
 		},
 	}
 
@@ -193,7 +206,7 @@ func makeClusterForPeer(config *XDSServerConfig, peer *Peer) *cluster.Cluster {
 		DnsLookupFamily:               cluster.Cluster_V4_ONLY,
 		TypedExtensionProtocolOptions: makeTypedExtensionProtocolOptions(),
 		LoadAssignment:                makeEndpoint(name, peer.Host, peer.Port),
-		TransportSocket:               makeTransportSocketForUpstream(config),
+		TransportSocket:               makeTransportSocketForUpstream(config, peer),
 	}
 }
 
@@ -268,15 +281,29 @@ func makeRouteConfig(partyId string, type_ string, services []*Service) *route.R
 	}
 }
 
-func makeTransportSocketForUpstream(config *XDSServerConfig) *core.TransportSocket {
+func makeTransportSocketForUpstream(config *XDSServerConfig, peer *Peer) *core.TransportSocket {
+	tlsRootCaName := config.Server.TlsRootCaDefaultName
+	if peer.tlsRootCa != "" {
+		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.PartyId)
+	}
+
+	tlsPrivateCaName := config.Server.TlsPrivateCaDefaultName
+	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
+		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.PartyId)
+	}
+
+	sdsConfig := configSource("xds", config.Server.SdsConfigClusterName)
+
 	tlsc := &auth.UpstreamTlsContext{
 		CommonTlsContext: &auth.CommonTlsContext{
 			TlsCertificateSdsSecretConfigs: []*auth.SdsSecretConfig{{
-				Name: config.Server.TlsCert,
+				Name:      tlsPrivateCaName,
+				SdsConfig: sdsConfig,
 			}},
 			ValidationContextType: &auth.CommonTlsContext_ValidationContextSdsSecretConfig{
 				ValidationContextSdsSecretConfig: &auth.SdsSecretConfig{
-					Name: config.Server.TlsValidationContext,
+					Name:      tlsRootCaName,
+					SdsConfig: sdsConfig,
 				},
 			},
 		},
@@ -291,22 +318,36 @@ func makeTransportSocketForUpstream(config *XDSServerConfig) *core.TransportSock
 	}
 }
 
-func makeTransportSocketForDownstream(config *XDSServerConfig) *core.TransportSocket {
+func makeTransportSocketForDownstream(config *XDSServerConfig, peer *Peer) *core.TransportSocket {
+	var sdsConfig *core.ConfigSource
+
+	tlsRootCaName := config.Server.TlsRootCaDefaultName
+	if peer.tlsRootCa != "" {
+		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.PartyId)
+	}
+
+	tlsPrivateCaName := config.Server.TlsPrivateCaDefaultName
+	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
+		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.PartyId)
+		sdsConfig = configSource("xds", config.Server.SdsConfigClusterName)
+	}
+
 	tlsc := &auth.DownstreamTlsContext{
 		RequireClientCertificate: &wrapperspb.BoolValue{
 			Value: true,
 		},
 		CommonTlsContext: &auth.CommonTlsContext{
 			TlsCertificateSdsSecretConfigs: []*auth.SdsSecretConfig{{
-				Name: config.Server.TlsCert,
+				Name:      tlsPrivateCaName,
+				SdsConfig: sdsConfig,
 			}},
 			ValidationContextType: &auth.CommonTlsContext_ValidationContextSdsSecretConfig{
 				ValidationContextSdsSecretConfig: &auth.SdsSecretConfig{
-					Name: config.Server.TlsValidationContext,
+					Name:      tlsRootCaName,
+					SdsConfig: sdsConfig,
 				},
 			},
-		},
-	}
+		}}
 
 	mt, _ := anypb.New(tlsc)
 	return &core.TransportSocket{
@@ -317,13 +358,29 @@ func makeTransportSocketForDownstream(config *XDSServerConfig) *core.TransportSo
 	}
 }
 
-func configSource() *core.ConfigSource {
-	return &core.ConfigSource{
-		ResourceApiVersion: resource.DefaultAPIVersion,
-		ConfigSourceSpecifier: &core.ConfigSource_Ads{
+func configSource(mode, xdsCluster string) *core.ConfigSource {
+	source := &core.ConfigSource{}
+	source.ResourceApiVersion = resource.DefaultAPIVersion
+	switch mode {
+	case "ads":
+		source.ConfigSourceSpecifier = &core.ConfigSource_Ads{
 			Ads: &core.AggregatedConfigSource{},
-		},
+		}
+	case "xds":
+		source.ConfigSourceSpecifier = &core.ConfigSource_ApiConfigSource{
+			ApiConfigSource: &core.ApiConfigSource{
+				TransportApiVersion:       resource.DefaultAPIVersion,
+				ApiType:                   core.ApiConfigSource_GRPC,
+				SetNodeOnFirstMessageOnly: true,
+				GrpcServices: []*core.GrpcService{{
+					TargetSpecifier: &core.GrpcService_EnvoyGrpc_{
+						EnvoyGrpc: &core.GrpcService_EnvoyGrpc{ClusterName: xdsCluster},
+					},
+				}},
+			},
+		}
 	}
+	return source
 }
 
 func makeTypedExtensionProtocolOptions() map[string]*anypb.Any {

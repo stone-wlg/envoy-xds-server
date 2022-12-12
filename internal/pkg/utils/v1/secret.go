@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	tlsName = "server_cert"
+	tlsName = "tls-party"
 
-	rootName = "validation_context"
+	rootName = "tls-ca"
 
 	privateKey = `-----BEGIN EC PRIVATE KEY-----
 MHcCAQEEIBhxmxueLxxmDkhVE7umMhUIUTSNaX34cMGUFbj73Mu0oAoGCCqGSM49
@@ -127,6 +127,35 @@ func MakeSecrets(tlsName, rootName string) []*auth.Secret {
 						Specifier: &core.DataSource_InlineBytes{InlineBytes: []byte(rootCert)},
 						// Specifier: &core.DataSource_InlineString{InlineString: rootCert},
 					},
+				},
+			},
+		},
+	}
+}
+
+func MakePrivateCaSecret(tlsName, privateKey, privateChain string) *auth.Secret {
+	return &auth.Secret{
+		Name: tlsName,
+		Type: &auth.Secret_TlsCertificate{
+			TlsCertificate: &auth.TlsCertificate{
+				PrivateKey: &core.DataSource{
+					Specifier: &core.DataSource_InlineBytes{InlineBytes: []byte(privateKey)},
+				},
+				CertificateChain: &core.DataSource{
+					Specifier: &core.DataSource_InlineBytes{InlineBytes: []byte(privateChain)},
+				},
+			},
+		},
+	}
+}
+
+func MakeRootCaSecret(caName, caChain string) *auth.Secret {
+	return &auth.Secret{
+		Name: caName,
+		Type: &auth.Secret_ValidationContext{
+			ValidationContext: &auth.CertificateValidationContext{
+				TrustedCa: &core.DataSource{
+					Specifier: &core.DataSource_InlineBytes{InlineBytes: []byte(caChain)},
 				},
 			},
 		},
