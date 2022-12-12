@@ -63,9 +63,9 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 		}
 	}
 
-	tlsRootCaDefaultSecret := MakeRootCaSecret(config.Server.TlsRootCaDefaultName, rootCert)
+	tlsRootCaDefaultSecret := MakeRootCaSecret(config.Secret.TlsRootCaDefaultName, config.Secret.DefaultRootCa)
 	secrets = append(secrets, tlsRootCaDefaultSecret)
-	tlsPrivateCaDefaultSecret := MakePrivateCaSecret(config.Server.TlsPrivateCaDefaultName, privateKey, privateChain)
+	tlsPrivateCaDefaultSecret := MakePrivateCaSecret(config.Secret.TlsPrivateCaDefaultName, config.Secret.DefaultPrivateKey, config.Secret.DefaultPrivateCa)
 	secrets = append(secrets, tlsPrivateCaDefaultSecret)
 
 	snapshot, _ := cache.NewSnapshot(uuid.New().String(), map[resource.Type][]types.Resource{
@@ -282,17 +282,17 @@ func makeRouteConfig(partyId string, type_ string, services []*Service) *route.R
 }
 
 func makeTransportSocketForUpstream(config *XDSServerConfig, peer *Peer) *core.TransportSocket {
-	tlsRootCaName := config.Server.TlsRootCaDefaultName
+	tlsRootCaName := config.Secret.TlsRootCaDefaultName
 	if peer.tlsRootCa != "" {
 		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.PartyId)
 	}
 
-	tlsPrivateCaName := config.Server.TlsPrivateCaDefaultName
+	tlsPrivateCaName := config.Secret.TlsPrivateCaDefaultName
 	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
 		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.PartyId)
 	}
 
-	sdsConfig := configSource("xds", config.Server.SdsConfigClusterName)
+	sdsConfig := configSource("xds", config.Secret.SdsConfigClusterName)
 
 	tlsc := &auth.UpstreamTlsContext{
 		CommonTlsContext: &auth.CommonTlsContext{
@@ -321,15 +321,15 @@ func makeTransportSocketForUpstream(config *XDSServerConfig, peer *Peer) *core.T
 func makeTransportSocketForDownstream(config *XDSServerConfig, peer *Peer) *core.TransportSocket {
 	var sdsConfig *core.ConfigSource
 
-	tlsRootCaName := config.Server.TlsRootCaDefaultName
+	tlsRootCaName := config.Secret.TlsRootCaDefaultName
 	if peer.tlsRootCa != "" {
 		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.PartyId)
 	}
 
-	tlsPrivateCaName := config.Server.TlsPrivateCaDefaultName
+	tlsPrivateCaName := config.Secret.TlsPrivateCaDefaultName
 	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
 		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.PartyId)
-		sdsConfig = configSource("xds", config.Server.SdsConfigClusterName)
+		sdsConfig = configSource("xds", config.Secret.SdsConfigClusterName)
 	}
 
 	tlsc := &auth.DownstreamTlsContext{

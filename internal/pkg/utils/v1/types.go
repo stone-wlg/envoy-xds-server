@@ -2,12 +2,18 @@ package utils
 
 type XDSServerConfig struct {
 	Server struct {
-		Id                      string `yaml:"id"`
-		Port                    uint32 `yaml:"port"`
-		RefreshInterval         uint64 `yaml:"refresh_interval"`
+		Id              string `yaml:"id"`
+		Port            uint32 `yaml:"port"`
+		RefreshInterval uint64 `yaml:"refresh_interval"`
+	}
+
+	Secret struct {
 		SdsConfigClusterName    string `yaml:"sds_config_cluster_name"`
 		TlsRootCaDefaultName    string `yaml:"tls_root_ca_default_name"`
 		TlsPrivateCaDefaultName string `yaml:"tls_private_ca_default_name"`
+		DefaultRootCa           string `yaml:"default_root_ca"`
+		DefaultPrivateCa        string `yaml:"default_private_ca"`
+		DefaultPrivateKey       string `yaml:"default_private_key"`
 	}
 
 	Party struct {
