@@ -11,22 +11,21 @@ $ ./bin/envoy-xds-server --configFile ./2000.yaml
 
 # database
 ```sql
-DROP DATABASE IF EXISTS `fedx-pir-1000`;
-CREATE DATABASE IF NOT EXISTS `fedx-pir-1000`;
-USE `fedx-pir-1000`;
-DROP DATABASE IF EXISTS `fedx-pir-2000`;
-CREATE DATABASE IF NOT EXISTS `fedx-pir-2000`;
-USE `fedx-pir-2000`;
-DROP DATABASE IF EXISTS `fedx-pir-3000`;
-CREATE DATABASE IF NOT EXISTS `fedx-pir-3000`;
-USE `fedx-pir-3000`;
+DROP DATABASE IF EXISTS `fedx-1000`;
+CREATE DATABASE IF NOT EXISTS `fedx-1000`;
+USE `fedx-1000`;
+DROP DATABASE IF EXISTS `fedx-2000`;
+CREATE DATABASE IF NOT EXISTS `fedx-2000`;
+USE `fedx-2000`;
+DROP DATABASE IF EXISTS `fedx-3000`;
+CREATE DATABASE IF NOT EXISTS `fedx-3000`;
+USE `fedx-3000`;
 
-USE `fedx-pir-1000`;
-#DROP TABLE IF EXISTS `peer`;
-CREATE TABLE IF NOT EXISTS `peer`  (
-  `id` BIGINT NOT NULL,
-  `party_id` VARCHAR(255) NOT NULL,
-  `type` ENUM('pir','xxx') NOT NULL DEFAULT 'pir',
+USE `fedx-1000`;
+DROP TABLE IF EXISTS `peer`;
+CREATE TABLE IF NOT EXISTS `peer`(
+  `id` VARCHAR(255) NOT NULL,
+  `mode` ENUM('tcp','http') NOT NULL DEFAULT 'tcp',
   `host` VARCHAR(255) NOT NULL DEFAULT '0.0.0.0',
   `port` INT NOT NULL DEFAULT 10000,
   `tls_root_ca` TEXT,
@@ -35,17 +34,17 @@ CREATE TABLE IF NOT EXISTS `peer`  (
   `is_deleted` BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-#DROP TABLE IF EXISTS `service`;
-CREATE TABLE IF NOT EXISTS `service`  (
+DROP TABLE IF EXISTS `service`;
+CREATE TABLE IF NOT EXISTS `service`(
   `id` BIGINT NOT NULL,
-  `party_id` VARCHAR(255) NOT NULL,
-  `type` ENUM('pir','xxx') NOT NULL DEFAULT 'pir',
+  `mode` ENUM('tcp','http') NOT NULL DEFAULT 'tcp',
   `host` VARCHAR(255) NOT NULL DEFAULT '0.0.0.0',
   `port` INT NOT NULL DEFAULT 10000,
+  `peer_id` VARCHAR(255) NOT NULL,  
   `is_deleted` BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-INSERT INTO `fedx-pir-1000`.`peer` VALUES (10, '1000', 'pir', '192.168.10.10', 31008, 
+INSERT INTO `fedx-1000`.`peer` VALUES ('1000', 'tcp', '192.168.10.10', 31000, 
 '-----BEGIN CERTIFICATE-----
 MIID3TCCAsWgAwIBAgIUATn/evrhB1h15bx2cWv3Ah1t+y4wDQYJKoZIhvcNAQEL
 BQAwZjELMAkGA1UEBhMCQ04xETAPBgNVBAgTCFNoYW5naGFpMREwDwYDVQQHEwhT
@@ -120,7 +119,7 @@ S51iO1kX77UWEzpDpm/Z95ujSTxltIOp97elhetPebvWXa8fmB0eEcDZRWzaA9fF
 Iwp8M2W2xljujax+3aZuc7wDAcqmOQPgUBBUEDlTjMGgFeU=
 -----END CERTIFICATE-----',
 FALSE);
-INSERT INTO `fedx-pir-1000`.`peer` VALUES (20, '2000', 'pir', '192.168.10.10', 32008, '',
+INSERT INTO `fedx-1000`.`peer` VALUES ('2000', 'tcp', '192.168.10.10', 32000, '',
 '-----BEGIN EC PRIVATE KEY-----
 MHcCAQEEIBhxmxueLxxmDkhVE7umMhUIUTSNaX34cMGUFbj73Mu0oAoGCCqGSM49
 AwEHoUQDQgAE/Z1XoAVtc08mvtPgJioXzPji0nCusOdNXj7f/VTs+CZ6KiNy8Ja6
@@ -150,9 +149,9 @@ S51iO1kX77UWEzpDpm/Z95ujSTxltIOp97elhetPebvWXa8fmB0eEcDZRWzaA9fF
 Iwp8M2W2xljujax+3aZuc7wDAcqmOQPgUBBUEDlTjMGgFeU=
 -----END CERTIFICATE-----', 
 FALSE);
-INSERT INTO `fedx-pir-1000`.`peer` VALUES (30, '3000', 'pir', '192.168.10.10', 33008, '', '', '', FALSE);
+INSERT INTO `fedx-1000`.`peer` VALUES ('3000', 'tcp', '192.168.10.10', 33000, '', '', '', FALSE);
 
-INSERT INTO `fedx-pir-2000`.`peer` VALUES (10, '1000', 'pir', '192.168.10.10', 31008,
+INSERT INTO `fedx-2000`.`peer` VALUES ('1000', 'tcp', '192.168.10.10', 31008,
 '-----BEGIN CERTIFICATE-----
 MIID3TCCAsWgAwIBAgIUATn/evrhB1h15bx2cWv3Ah1t+y4wDQYJKoZIhvcNAQEL
 BQAwZjELMAkGA1UEBhMCQ04xETAPBgNVBAgTCFNoYW5naGFpMREwDwYDVQQHEwhT
@@ -222,12 +221,12 @@ cHVsc2FyLmt1YmVmYXRlLm5ldIIUKi5zcGFyay5rdWJlZmF0ZS5uZXSHBH8AAAEw
 DQYJKoZIhvcNAQELBQADggEBAFynbKzE6SqB/yOPpqj6lKzVBoL0bE5VD0JIO85Q
 BS1xldQZgxPgdzva5hAo1GZ//XrqHEODcnQdGQm+dOYllsaLo++dpzEeLM9XT4+U
 Jfi6XEhGLaCCDe+8WkrK3noqJ1yTLBUlT5j2fJhbKsIG98KabJMCQ+nJwo6YqHay
-efCF1LiMd3i1A1ErJ9zAdr6z74UpiruP7BpJhMkZ2jCdW+fFvILDrXq7yb/rywo0
+efCF1LiMd3i1A1ErJ9zAdr6z74UtcpuP7BpJhMkZ2jCdW+fFvILDrXq7yb/rywo0
 cv5LQgPcgUTnqKP/aD6r9fgMJm2z5daIUVm5v+ApVxjygW/hPu7Mc4KrO7cnGSkS
 CD/ezna460jssDORGN+Xb8Db3/IihAuuwbb4bQyer5eaLS4=
 -----END CERTIFICATE-----',
 FALSE);
-INSERT INTO `fedx-pir-2000`.`peer` VALUES (20, '2000', 'pir', '192.168.10.10', 32008, 
+INSERT INTO `fedx-2000`.`peer` VALUES ('2000', 'tcp', '192.168.10.10', 32008, 
 '',
 '-----BEGIN EC PRIVATE KEY-----
 MHcCAQEEIH4l+3Dmo5brGNdJgz7m9CKRE1O+7tsj+OG/Ti9lMpGboAoGCCqGSM49
@@ -253,46 +252,46 @@ cHVsc2FyLmt1YmVmYXRlLm5ldIIUKi5zcGFyay5rdWJlZmF0ZS5uZXSHBH8AAAEw
 DQYJKoZIhvcNAQELBQADggEBAFynbKzE6SqB/yOPpqj6lKzVBoL0bE5VD0JIO85Q
 BS1xldQZgxPgdzva5hAo1GZ//XrqHEODcnQdGQm+dOYllsaLo++dpzEeLM9XT4+U
 Jfi6XEhGLaCCDe+8WkrK3noqJ1yTLBUlT5j2fJhbKsIG98KabJMCQ+nJwo6YqHay
-efCF1LiMd3i1A1ErJ9zAdr6z74UpiruP7BpJhMkZ2jCdW+fFvILDrXq7yb/rywo0
+efCF1LiMd3i1A1ErJ9zAdr6z74UtcpuP7BpJhMkZ2jCdW+fFvILDrXq7yb/rywo0
 cv5LQgPcgUTnqKP/aD6r9fgMJm2z5daIUVm5v+ApVxjygW/hPu7Mc4KrO7cnGSkS
 CD/ezna460jssDORGN+Xb8Db3/IihAuuwbb4bQyer5eaLS4=
 -----END CERTIFICATE-----',
 FALSE);
-INSERT INTO `fedx-pir-2000`.`peer` VALUES (30, '3000', 'pir', '192.168.10.10', 33008, '', '', '', FALSE);
+INSERT INTO `fedx-2000`.`peer` VALUES ('3000', 'tcp', '192.168.10.10', 33008, '', '', '', FALSE);
 
-INSERT INTO `fedx-pir-3000`.`peer` VALUES (10, '1000', 'pir', '192.168.10.10', 31008, '', '', '', FALSE);
-INSERT INTO `fedx-pir-3000`.`peer` VALUES (20, '2000', 'pir', '192.168.10.10', 32008, '', '', '', FALSE);
-INSERT INTO `fedx-pir-3000`.`peer` VALUES (30, '3000', 'pir', '192.168.10.10', 33008,  '', '', '', FALSE);
+INSERT INTO `fedx-3000`.`peer` VALUES ('1000', 'tcp', '192.168.10.10', 31008, '', '', '', FALSE);
+INSERT INTO `fedx-3000`.`peer` VALUES ('2000', 'tcp', '192.168.10.10', 32008, '', '', '', FALSE);
+INSERT INTO `fedx-3000`.`peer` VALUES ('3000', 'tcp', '192.168.10.10', 33008,  '', '', '', FALSE);
 
-INSERT INTO `fedx-pir-1000`.`service` VALUES (11, '1000', 'pir', 'fedx-pir-101-sender-1000-shard-001', 12121, FALSE);
-INSERT INTO `fedx-pir-1000`.`service` VALUES (12, '1000', 'pir', 'fedx-pir-101-sender-1000-shard-002', 12122, FALSE);
-INSERT INTO `fedx-pir-1000`.`service` VALUES (13, '1000', 'pir', 'fedx-pir-101-sender-1000-shard-003', 12123, FALSE);
-INSERT INTO `fedx-pir-1000`.`service` VALUES (14, '2000', 'pir', 'fedx-pir-201-sender-2000-shard-001', 20001, FALSE);
-INSERT INTO `fedx-pir-1000`.`service` VALUES (15, '2000', 'pir', 'fedx-pir-201-sender-2000-shard-002', 20002, FALSE);
-INSERT INTO `fedx-pir-1000`.`service` VALUES (16, '2000', 'pir', 'fedx-pir-201-sender-2000-shard-003', 20003, FALSE);
-INSERT INTO `fedx-pir-1000`.`service` VALUES (17, '3000', 'pir', 'fedx-pir-301-sender-3000-shard-001', 30001, FALSE);
-INSERT INTO `fedx-pir-1000`.`service` VALUES (18, '3000', 'pir', 'fedx-pir-301-sender-3000-shard-002', 30002, FALSE);
-INSERT INTO `fedx-pir-1000`.`service` VALUES (19, '3000', 'pir', 'fedx-pir-301-sender-3000-shard-003', 30003, FALSE);
+INSERT INTO `fedx-1000`.`service` VALUES (11, '1000', 'tcp', 'fedx-101-sender-1000-shard-001', 12121, FALSE);
+INSERT INTO `fedx-1000`.`service` VALUES (12, '1000', 'tcp', 'fedx-101-sender-1000-shard-002', 12122, FALSE);
+INSERT INTO `fedx-1000`.`service` VALUES (13, '1000', 'tcp', 'fedx-101-sender-1000-shard-003', 12123, FALSE);
+INSERT INTO `fedx-1000`.`service` VALUES (14, '2000', 'tcp', 'fedx-201-sender-2000-shard-001', 20001, FALSE);
+INSERT INTO `fedx-1000`.`service` VALUES (15, '2000', 'tcp', 'fedx-201-sender-2000-shard-002', 20002, FALSE);
+INSERT INTO `fedx-1000`.`service` VALUES (16, '2000', 'tcp', 'fedx-201-sender-2000-shard-003', 20003, FALSE);
+INSERT INTO `fedx-1000`.`service` VALUES (17, '3000', 'tcp', 'fedx-301-sender-3000-shard-001', 30001, FALSE);
+INSERT INTO `fedx-1000`.`service` VALUES (18, '3000', 'tcp', 'fedx-301-sender-3000-shard-002', 30002, FALSE);
+INSERT INTO `fedx-1000`.`service` VALUES (19, '3000', 'tcp', 'fedx-301-sender-3000-shard-003', 30003, FALSE);
 
-INSERT INTO `fedx-pir-2000`.`service` VALUES (11, '1000', 'pir', 'fedx-pir-101-sender-1000-shard-001', 10001, FALSE);
-INSERT INTO `fedx-pir-2000`.`service` VALUES (12, '1000', 'pir', 'fedx-pir-101-sender-1000-shard-002', 10002, FALSE);
-INSERT INTO `fedx-pir-2000`.`service` VALUES (13, '1000', 'pir', 'fedx-pir-101-sender-1000-shard-003', 10003, FALSE);
-INSERT INTO `fedx-pir-2000`.`service` VALUES (14, '2000', 'pir', 'fedx-pir-201-sender-2000-shard-001', 12121, FALSE);
-INSERT INTO `fedx-pir-2000`.`service` VALUES (15, '2000', 'pir', 'fedx-pir-201-sender-2000-shard-002', 12122, FALSE);
-INSERT INTO `fedx-pir-2000`.`service` VALUES (16, '2000', 'pir', 'fedx-pir-201-sender-2000-shard-003', 12123, FALSE);
-INSERT INTO `fedx-pir-2000`.`service` VALUES (17, '3000', 'pir', 'fedx-pir-301-sender-3000-shard-001', 30001, FALSE);
-INSERT INTO `fedx-pir-2000`.`service` VALUES (18, '3000', 'pir', 'fedx-pir-301-sender-3000-shard-002', 30002, FALSE);
-INSERT INTO `fedx-pir-2000`.`service` VALUES (19, '3000', 'pir', 'fedx-pir-301-sender-3000-shard-003', 30003, FALSE);
+INSERT INTO `fedx-2000`.`service` VALUES (11, '1000', 'tcp', 'fedx-101-sender-1000-shard-001', 10001, FALSE);
+INSERT INTO `fedx-2000`.`service` VALUES (12, '1000', 'tcp', 'fedx-101-sender-1000-shard-002', 10002, FALSE);
+INSERT INTO `fedx-2000`.`service` VALUES (13, '1000', 'tcp', 'fedx-101-sender-1000-shard-003', 10003, FALSE);
+INSERT INTO `fedx-2000`.`service` VALUES (14, '2000', 'tcp', 'fedx-201-sender-2000-shard-001', 12121, FALSE);
+INSERT INTO `fedx-2000`.`service` VALUES (15, '2000', 'tcp', 'fedx-201-sender-2000-shard-002', 12122, FALSE);
+INSERT INTO `fedx-2000`.`service` VALUES (16, '2000', 'tcp', 'fedx-201-sender-2000-shard-003', 12123, FALSE);
+INSERT INTO `fedx-2000`.`service` VALUES (17, '3000', 'tcp', 'fedx-301-sender-3000-shard-001', 30001, FALSE);
+INSERT INTO `fedx-2000`.`service` VALUES (18, '3000', 'tcp', 'fedx-301-sender-3000-shard-002', 30002, FALSE);
+INSERT INTO `fedx-2000`.`service` VALUES (19, '3000', 'tcp', 'fedx-301-sender-3000-shard-003', 30003, FALSE);
 
-INSERT INTO `fedx-pir-3000`.`service` VALUES (11, '1000', 'pir', 'fedx-pir-101-sender-1000-shard-001', 10001, FALSE);
-INSERT INTO `fedx-pir-3000`.`service` VALUES (12, '1000', 'pir', 'fedx-pir-101-sender-1000-shard-002', 10002, FALSE);
-INSERT INTO `fedx-pir-3000`.`service` VALUES (13, '1000', 'pir', 'fedx-pir-101-sender-1000-shard-003', 10003, FALSE);
-INSERT INTO `fedx-pir-3000`.`service` VALUES (14, '2000', 'pir', 'fedx-pir-201-sender-2000-shard-001', 20001, FALSE);
-INSERT INTO `fedx-pir-3000`.`service` VALUES (15, '2000', 'pir', 'fedx-pir-201-sender-2000-shard-002', 20002, FALSE);
-INSERT INTO `fedx-pir-3000`.`service` VALUES (16, '2000', 'pir', 'fedx-pir-201-sender-2000-shard-003', 20003, FALSE);
-INSERT INTO `fedx-pir-3000`.`service` VALUES (17, '3000', 'pir', 'fedx-pir-301-sender-3000-shard-001', 12121, FALSE);
-INSERT INTO `fedx-pir-3000`.`service` VALUES (18, '3000', 'pir', 'fedx-pir-301-sender-3000-shard-002', 12122, FALSE);
-INSERT INTO `fedx-pir-3000`.`service` VALUES (19, '3000', 'pir', 'fedx-pir-301-sender-3000-shard-003', 12123, FALSE);
+INSERT INTO `fedx-3000`.`service` VALUES (11, '1000', 'tcp', 'fedx-101-sender-1000-shard-001', 10001, FALSE);
+INSERT INTO `fedx-3000`.`service` VALUES (12, '1000', 'tcp', 'fedx-101-sender-1000-shard-002', 10002, FALSE);
+INSERT INTO `fedx-3000`.`service` VALUES (13, '1000', 'tcp', 'fedx-101-sender-1000-shard-003', 10003, FALSE);
+INSERT INTO `fedx-3000`.`service` VALUES (14, '2000', 'tcp', 'fedx-201-sender-2000-shard-001', 20001, FALSE);
+INSERT INTO `fedx-3000`.`service` VALUES (15, '2000', 'tcp', 'fedx-201-sender-2000-shard-002', 20002, FALSE);
+INSERT INTO `fedx-3000`.`service` VALUES (16, '2000', 'tcp', 'fedx-201-sender-2000-shard-003', 20003, FALSE);
+INSERT INTO `fedx-3000`.`service` VALUES (17, '3000', 'tcp', 'fedx-301-sender-3000-shard-001', 12121, FALSE);
+INSERT INTO `fedx-3000`.`service` VALUES (18, '3000', 'tcp', 'fedx-301-sender-3000-shard-002', 12122, FALSE);
+INSERT INTO `fedx-3000`.`service` VALUES (19, '3000', 'tcp', 'fedx-301-sender-3000-shard-003', 12123, FALSE);
 
 SELECT * FROM `peer`;
 SELECT * FROM `service`;

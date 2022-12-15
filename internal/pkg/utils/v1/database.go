@@ -45,7 +45,7 @@ func GetPeers(sql string) []*Peer {
 
 	for rows.Next() {
 		var peer = Peer{}
-		err := rows.Scan(&peer.PartyId, &peer.Type, &peer.Host, &peer.Port, &peer.tlsRootCa, &peer.tlsPrivateKey, &peer.tlsPrivateCa)
+		err := rows.Scan(&peer.Id, &peer.Mode, &peer.Host, &peer.Port, &peer.tlsRootCa, &peer.tlsPrivateKey, &peer.tlsPrivateCa)
 		if err != nil {
 			log.Printf("peer scan failed, err:%v\n", err)
 			return peers
@@ -68,7 +68,7 @@ func GetServices(sql string) []*Service {
 
 	for rows.Next() {
 		var service = Service{}
-		err := rows.Scan(&service.PartyId, &service.Type, &service.Host, &service.Port)
+		err := rows.Scan(&service.Id, &service.Mode, &service.Host, &service.Port, &service.PeerId)
 		if err != nil {
 			log.Printf("service scan failed, err:%v\n", err)
 			return services

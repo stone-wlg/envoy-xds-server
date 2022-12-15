@@ -29,7 +29,7 @@ func RunServer(config *utils.XDSServerConfig) {
 	// Run the xDS server
 	ctx := context.Background()
 	srv := server.NewServer(ctx, snapshotCache, nil)
-	utils.RunServer(ctx, srv, uint(config.Server.Port))
+	utils.RunServer(ctx, srv, uint(config.Peer.Port))
 }
 
 func refreshSnapShotCache(config *utils.XDSServerConfig) {
@@ -43,11 +43,11 @@ func refreshSnapShotCache(config *utils.XDSServerConfig) {
 			continue
 		}
 
-		if err := snapshotCache.SetSnapshot(context.Background(), config.Server.Id, snapshot); err != nil {
+		if err := snapshotCache.SetSnapshot(context.Background(), config.Peer.Id, snapshot); err != nil {
 			log.Printf("snapshot error %q for %+v", snapshot, err)
 			continue
 		}
 
-		time.Sleep(time.Duration(config.Server.RefreshInterval) * time.Second)
+		time.Sleep(time.Duration(config.Peer.RefreshInterval) * time.Second)
 	}
 }

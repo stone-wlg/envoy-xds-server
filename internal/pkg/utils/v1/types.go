@@ -1,10 +1,18 @@
 package utils
 
 type XDSServerConfig struct {
-	Server struct {
+	Peer struct {
 		Id              string `yaml:"id"`
+		Name            string `yaml:"name"`
 		Port            uint32 `yaml:"port"`
 		RefreshInterval uint64 `yaml:"refresh_interval"`
+	}
+
+	Features []*struct {
+		Index  string `yaml:"index"`
+		Name   string `yaml:"name"`
+		Module string `yaml:"module"`
+		Mode   string `yaml:"mode"`
 	}
 
 	Secret struct {
@@ -14,10 +22,6 @@ type XDSServerConfig struct {
 		DefaultRootCa           string `yaml:"default_root_ca"`
 		DefaultPrivateCa        string `yaml:"default_private_ca"`
 		DefaultPrivateKey       string `yaml:"default_private_key"`
-	}
-
-	Party struct {
-		Id string `yaml:"id"`
 	}
 
 	Mysql struct {
@@ -32,8 +36,8 @@ type XDSServerConfig struct {
 }
 
 type Peer struct {
-	PartyId       string
-	Type          string
+	Id            string
+	Mode          string
 	Host          string
 	Port          uint32
 	tlsRootCa     string
@@ -42,8 +46,9 @@ type Peer struct {
 }
 
 type Service struct {
-	PartyId string
-	Type    string
-	Host    string
-	Port    uint32
+	Id     string
+	Mode   string
+	Host   string
+	Port   uint32
+	PeerId string
 }

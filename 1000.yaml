@@ -1,5 +1,5 @@
-server:
-  id: pir
+peer:
+  id: 1000
   port: 18001
   refresh_interval: 60
 
@@ -84,14 +84,11 @@ secret:
     MbhTOmF/7rVtQT2JJV6Nig+ACEZdFBixTw==
     -----END EC PRIVATE KEY-----  
 
-party:
-  id: 1000
-
 mysql:
   host: "192.168.10.10"
   port: 3306
   user: root
   password: root
   database: fedx-pir-1000
-  peer_sql: "SELECT party_id, type, host, port, tls_root_ca, tls_private_key, tls_private_ca FROM peer WHERE is_deleted = FALSE"
-  service_sql: "SELECT party_id, type, host, port FROM service WHERE is_deleted = FALSE"
+  peer_sql: "SELECT party_id, mode, host, port, tls_root_ca, tls_private_key, tls_private_ca FROM peer WHERE is_deleted = FALSE"
+  service_sql: "SELECT party_id, mode, host, port FROM service WHERE is_deleted = FALSE"

@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
@@ -35,38 +36,25 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 	var secrets []types.Resource
 
 	for _, peer := range peers {
-		if peer.tlsRootCa != "" {
-			rootCaName := fmt.Sprintf("tls-root-ca-%s", peer.PartyId)
-			rootCaSecret := MakeRootCaSecret(rootCaName, peer.tlsRootCa)
-			secrets = append(secrets, rootCaSecret)
-		}
-
-		if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
-			tlsPrivateCaName := fmt.Sprintf("tls-private-ca-%s", peer.PartyId)
-			tlsPrivateCaSecret := MakePrivateCaSecret(tlsPrivateCaName, peer.tlsPrivateKey, peer.tlsPrivateCa)
-			secrets = append(secrets, tlsPrivateCaSecret)
-		}
-
-		if peer.PartyId == config.Party.Id {
-			listeners = append(listeners, makeHTTP2Listener(config, peer))
-			routes = append(routes, makeRouteConfig(peer.PartyId, peer.Type, services))
+		if peer.Id == config.Peer.Id {
+			listeners = append(listeners, makePeerListener(config, peer))
+			routes = append(routes, makeRouteConfig(config, services))
 		} else {
+			listeners = append(listeners, makePeerFeaturesListeners(config, peer)...)
 			clusters = append(clusters, makeClusterForPeer(config, peer))
 		}
+		secrets = append(secrets, makeSecrets(peer)...)
 	}
 
 	for _, service := range services {
-		if service.PartyId != config.Party.Id {
-			listeners = append(listeners, makeTCPListener(service))
+		if service.PeerId != config.Peer.Id {
+			listeners = append(listeners, makeServiceListener(service))
 		} else {
 			clusters = append(clusters, makeClusterForService(service))
 		}
 	}
 
-	tlsRootCaDefaultSecret := MakeRootCaSecret(config.Secret.TlsRootCaDefaultName, config.Secret.DefaultRootCa)
-	secrets = append(secrets, tlsRootCaDefaultSecret)
-	tlsPrivateCaDefaultSecret := MakePrivateCaSecret(config.Secret.TlsPrivateCaDefaultName, config.Secret.DefaultPrivateKey, config.Secret.DefaultPrivateCa)
-	secrets = append(secrets, tlsPrivateCaDefaultSecret)
+	secrets = append(secrets, makeDefaultSecrets(config)...)
 
 	snapshot, _ := cache.NewSnapshot(uuid.New().String(), map[resource.Type][]types.Resource{
 		resource.ClusterType:  clusters,
@@ -78,8 +66,8 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 	return snapshot
 }
 
-func makeHTTP2Listener(config *XDSServerConfig, peer *Peer) *listener.Listener {
-	name := fmt.Sprintf("%s-%s", peer.Type, peer.PartyId)
+func makePeerListener(config *XDSServerConfig, peer *Peer) *listener.Listener {
+	name := fmt.Sprintf("peer-%s", peer.Id)
 	routerConfig, _ := anypb.New(&router.Router{})
 
 	stdoutAccessLog, err := anypb.New(&access_loggers.StdoutAccessLog{})
@@ -88,8 +76,7 @@ func makeHTTP2Listener(config *XDSServerConfig, peer *Peer) *listener.Listener {
 	}
 
 	manager := &hcm.HttpConnectionManager{
-		CodecType:  hcm.HttpConnectionManager_AUTO,
-		StatPrefix: peer.Type,
+		StatPrefix: name,
 		HttpFilters: []*hcm.HttpFilter{{
 			Name:       wellknown.Router,
 			ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: routerConfig},
@@ -132,15 +119,196 @@ func makeHTTP2Listener(config *XDSServerConfig, peer *Peer) *listener.Listener {
 	return makeListener(name, peer.Port, filterChains)
 }
 
-func makeTCPListener(service *Service) *listener.Listener {
-	name := fmt.Sprintf("%s-%s", service.Type, service.PartyId)
+func makeRouteConfig(config *XDSServerConfig, services []*Service) *route.RouteConfiguration {
+	var virtualHosts []*route.VirtualHost
+	for _, service := range services {
+		if service.PeerId != config.Peer.Id {
+			continue
+		}
+		virtualHosts = append(virtualHosts, makeVirtualHostWithConnectMatcher(service.Host))
+	}
+
+	for _, feature := range config.Features {
+		if feature.Mode == "tcp" {
+			virtualHosts = append(virtualHosts, makeVirtualHostWithConnectMatcher(feature.Name))
+		} else {
+			virtualHosts = append(virtualHosts, makeVirtualHostWithPrefix(feature.Name))
+		}
+	}
+
+	return &route.RouteConfiguration{
+		Name:         fmt.Sprintf("peer-%s", config.Peer.Id),
+		VirtualHosts: virtualHosts,
+	}
+}
+
+func makePeerFeaturesListeners(config *XDSServerConfig, peer *Peer) []types.Resource {
+	var listeners []types.Resource
+	for _, feature := range config.Features {
+		portStr := fmt.Sprintf("%s%s", peer.Id, feature.Index)
+		port, err := strconv.ParseUint(portStr, 10, 32)
+		name := fmt.Sprintf("%s-%s", feature.Name, portStr)
+		stdoutAccessLog, err := anypb.New(&access_loggers.StdoutAccessLog{})
+		if err != nil {
+			panic(err)
+		}
+
+		config := &tcp.TcpProxy{
+			StatPrefix: name,
+			ClusterSpecifier: &tcp.TcpProxy_Cluster{
+				Cluster: fmt.Sprintf("peer-%s", peer.Id),
+			},
+			TunnelingConfig: &tcp.TcpProxy_TunnelingConfig{
+				Hostname: name,
+			},
+			AccessLog: []*alf.AccessLog{{
+				Name: "envoy.access_loggers.stdout",
+				ConfigType: &alf.AccessLog_TypedConfig{
+					TypedConfig: stdoutAccessLog,
+				},
+			},
+			},
+		}
+		pbst, err := anypb.New(config)
+		if err != nil {
+			log.Fatal(err)
+			panic(err)
+		}
+
+		filterChains := []*listener.FilterChain{
+			{
+				Filters: []*listener.Filter{
+					{
+						Name: wellknown.HTTPConnectionManager,
+						ConfigType: &listener.Filter_TypedConfig{
+							TypedConfig: pbst,
+						},
+					},
+				},
+			},
+		}
+		listeners = append(listeners, makeListener(name, uint32(port), filterChains))
+	}
+	return listeners
+}
+
+func makeVirtualHostWithConnectMatcher(name string) *route.VirtualHost {
+	return &route.VirtualHost{
+		Name:    name,
+		Domains: []string{name},
+		Routes: []*route.Route{{
+			Match: &route.RouteMatch{
+				PathSpecifier: &route.RouteMatch_ConnectMatcher_{},
+			},
+			Action: &route.Route_Route{
+				Route: &route.RouteAction{
+					ClusterSpecifier: &route.RouteAction_Cluster{
+						Cluster: name,
+					},
+					UpgradeConfigs: []*route.RouteAction_UpgradeConfig{{
+						UpgradeType:   "CONNECT",
+						ConnectConfig: &route.RouteAction_UpgradeConfig_ConnectConfig{},
+					}},
+				},
+			},
+		}},
+	}
+}
+
+func makeVirtualHostWithPrefix(name string) *route.VirtualHost {
+	return &route.VirtualHost{
+		Name:    name,
+		Domains: []string{name, "*"},
+		Routes: []*route.Route{{
+			Match: &route.RouteMatch{
+				PathSpecifier: &route.RouteMatch_Prefix{
+					Prefix: "/",
+				},
+			},
+			Action: &route.Route_Route{
+				Route: &route.RouteAction{
+					ClusterSpecifier: &route.RouteAction_Cluster{
+						Cluster: name,
+					},
+				},
+			},
+		}},
+	}
+}
+
+func makeTransportSocketForDownstream(config *XDSServerConfig, peer *Peer) *core.TransportSocket {
+	tlsRootCaName := config.Secret.TlsRootCaDefaultName
+	if peer.tlsRootCa != "" {
+		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.Id)
+	}
+
+	tlsPrivateCaName := config.Secret.TlsPrivateCaDefaultName
+	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
+		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.Id)
+	}
+
+	sdsConfig := configSource("xds", config.Secret.SdsConfigClusterName)
+
+	tlsc := &auth.DownstreamTlsContext{
+		RequireClientCertificate: &wrapperspb.BoolValue{
+			Value: true,
+		},
+		CommonTlsContext: &auth.CommonTlsContext{
+			TlsCertificateSdsSecretConfigs: []*auth.SdsSecretConfig{{
+				Name:      tlsPrivateCaName,
+				SdsConfig: sdsConfig,
+			}},
+			ValidationContextType: &auth.CommonTlsContext_ValidationContextSdsSecretConfig{
+				ValidationContextSdsSecretConfig: &auth.SdsSecretConfig{
+					Name:      tlsRootCaName,
+					SdsConfig: sdsConfig,
+				},
+			},
+		}}
+
+	mt, _ := anypb.New(tlsc)
+	return &core.TransportSocket{
+		Name: wellknown.TransportSocketTLS,
+		ConfigType: &core.TransportSocket_TypedConfig{
+			TypedConfig: mt,
+		},
+	}
+}
+
+func makeSecrets(peer *Peer) []types.Resource {
+	var secrets []types.Resource
+	if peer.tlsRootCa != "" {
+		rootCaName := fmt.Sprintf("tls-root-ca-%s", peer.Id)
+		rootCaSecret := MakeRootCaSecret(rootCaName, peer.tlsRootCa)
+		secrets = append(secrets, rootCaSecret)
+	}
+
+	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
+		tlsPrivateCaName := fmt.Sprintf("tls-private-ca-%s", peer.Id)
+		tlsPrivateCaSecret := MakePrivateCaSecret(tlsPrivateCaName, peer.tlsPrivateKey, peer.tlsPrivateCa)
+		secrets = append(secrets, tlsPrivateCaSecret)
+	}
+	return secrets
+}
+
+func makeDefaultSecrets(config *XDSServerConfig) []types.Resource {
+	var secrets []types.Resource
+	tlsRootCaDefaultSecret := MakeRootCaSecret(config.Secret.TlsRootCaDefaultName, config.Secret.DefaultRootCa)
+	secrets = append(secrets, tlsRootCaDefaultSecret)
+	tlsPrivateCaDefaultSecret := MakePrivateCaSecret(config.Secret.TlsPrivateCaDefaultName, config.Secret.DefaultPrivateKey, config.Secret.DefaultPrivateCa)
+	secrets = append(secrets, tlsPrivateCaDefaultSecret)
+	return secrets
+}
+
+func makeServiceListener(service *Service) *listener.Listener {
+	name := fmt.Sprintf("peer-%s", service.PeerId)
 	stdoutAccessLog, err := anypb.New(&access_loggers.StdoutAccessLog{})
 	if err != nil {
 		panic(err)
 	}
 
 	config := &tcp.TcpProxy{
-		StatPrefix: service.Type,
+		StatPrefix: service.Host,
 		ClusterSpecifier: &tcp.TcpProxy_Cluster{
 			Cluster: name,
 		},
@@ -196,7 +364,7 @@ func makeListener(name string, port uint32, filterChains []*listener.FilterChain
 }
 
 func makeClusterForPeer(config *XDSServerConfig, peer *Peer) *cluster.Cluster {
-	name := fmt.Sprintf("%s-%s", peer.Type, peer.PartyId)
+	name := fmt.Sprintf("peer-%s", peer.Id)
 
 	return &cluster.Cluster{
 		Name:                          name,
@@ -210,15 +378,22 @@ func makeClusterForPeer(config *XDSServerConfig, peer *Peer) *cluster.Cluster {
 	}
 }
 
-func makeClusterForService(service *Service) *cluster.Cluster {
-	return &cluster.Cluster{
-		Name:                          service.Host,
-		ConnectTimeout:                durationpb.New(5 * time.Second),
-		ClusterDiscoveryType:          &cluster.Cluster_Type{Type: cluster.Cluster_STRICT_DNS},
-		LbPolicy:                      cluster.Cluster_ROUND_ROBIN,
-		DnsLookupFamily:               cluster.Cluster_V4_ONLY,
-		TypedExtensionProtocolOptions: makeTypedExtensionProtocolOptions(),
-		LoadAssignment:                makeEndpoint(service.Host, service.Host, service.Port),
+func makeTypedExtensionProtocolOptions() map[string]*anypb.Any {
+	httpProtocolOptions, err := anypb.New(&ext_http.HttpProtocolOptions{
+		UpstreamProtocolOptions: &ext_http.HttpProtocolOptions_ExplicitHttpConfig_{
+			ExplicitHttpConfig: &ext_http.HttpProtocolOptions_ExplicitHttpConfig{
+				ProtocolConfig: &ext_http.HttpProtocolOptions_ExplicitHttpConfig_Http2ProtocolOptions{
+					Http2ProtocolOptions: &core.Http2ProtocolOptions{},
+				},
+			},
+		},
+	})
+	if httpProtocolOptions == nil && err != nil {
+		panic(err)
+	}
+
+	return map[string]*anypb.Any{
+		"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": httpProtocolOptions,
 	}
 }
 
@@ -247,49 +422,15 @@ func makeEndpoint(clusterName string, host string, port uint32) *endpoint.Cluste
 	}
 }
 
-func makeRouteConfig(partyId string, type_ string, services []*Service) *route.RouteConfiguration {
-	var virtualHosts []*route.VirtualHost
-	for _, service := range services {
-		if service.PartyId != partyId && service.Type == type_ {
-			continue
-		}
-		virtualHosts = append(virtualHosts, &route.VirtualHost{
-			Name:    service.Host,
-			Domains: []string{service.Host},
-			Routes: []*route.Route{{
-				Match: &route.RouteMatch{
-					PathSpecifier: &route.RouteMatch_ConnectMatcher_{},
-				},
-				Action: &route.Route_Route{
-					Route: &route.RouteAction{
-						ClusterSpecifier: &route.RouteAction_Cluster{
-							Cluster: service.Host,
-						},
-						UpgradeConfigs: []*route.RouteAction_UpgradeConfig{{
-							UpgradeType:   "CONNECT",
-							ConnectConfig: &route.RouteAction_UpgradeConfig_ConnectConfig{},
-						}},
-					},
-				},
-			}},
-		})
-	}
-
-	return &route.RouteConfiguration{
-		Name:         fmt.Sprintf("%s-%s", type_, partyId),
-		VirtualHosts: virtualHosts,
-	}
-}
-
 func makeTransportSocketForUpstream(config *XDSServerConfig, peer *Peer) *core.TransportSocket {
 	tlsRootCaName := config.Secret.TlsRootCaDefaultName
 	if peer.tlsRootCa != "" {
-		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.PartyId)
+		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.Id)
 	}
 
 	tlsPrivateCaName := config.Secret.TlsPrivateCaDefaultName
 	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
-		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.PartyId)
+		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.Id)
 	}
 
 	sdsConfig := configSource("xds", config.Secret.SdsConfigClusterName)
@@ -318,43 +459,15 @@ func makeTransportSocketForUpstream(config *XDSServerConfig, peer *Peer) *core.T
 	}
 }
 
-func makeTransportSocketForDownstream(config *XDSServerConfig, peer *Peer) *core.TransportSocket {
-	var sdsConfig *core.ConfigSource
-
-	tlsRootCaName := config.Secret.TlsRootCaDefaultName
-	if peer.tlsRootCa != "" {
-		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.PartyId)
-	}
-
-	tlsPrivateCaName := config.Secret.TlsPrivateCaDefaultName
-	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
-		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.PartyId)
-		sdsConfig = configSource("xds", config.Secret.SdsConfigClusterName)
-	}
-
-	tlsc := &auth.DownstreamTlsContext{
-		RequireClientCertificate: &wrapperspb.BoolValue{
-			Value: true,
-		},
-		CommonTlsContext: &auth.CommonTlsContext{
-			TlsCertificateSdsSecretConfigs: []*auth.SdsSecretConfig{{
-				Name:      tlsPrivateCaName,
-				SdsConfig: sdsConfig,
-			}},
-			ValidationContextType: &auth.CommonTlsContext_ValidationContextSdsSecretConfig{
-				ValidationContextSdsSecretConfig: &auth.SdsSecretConfig{
-					Name:      tlsRootCaName,
-					SdsConfig: sdsConfig,
-				},
-			},
-		}}
-
-	mt, _ := anypb.New(tlsc)
-	return &core.TransportSocket{
-		Name: wellknown.TransportSocketTLS,
-		ConfigType: &core.TransportSocket_TypedConfig{
-			TypedConfig: mt,
-		},
+func makeClusterForService(service *Service) *cluster.Cluster {
+	return &cluster.Cluster{
+		Name:                          service.Host,
+		ConnectTimeout:                durationpb.New(5 * time.Second),
+		ClusterDiscoveryType:          &cluster.Cluster_Type{Type: cluster.Cluster_STRICT_DNS},
+		LbPolicy:                      cluster.Cluster_ROUND_ROBIN,
+		DnsLookupFamily:               cluster.Cluster_V4_ONLY,
+		TypedExtensionProtocolOptions: makeTypedExtensionProtocolOptions(),
+		LoadAssignment:                makeEndpoint(service.Host, service.Host, service.Port),
 	}
 }
 
@@ -381,23 +494,4 @@ func configSource(mode, xdsCluster string) *core.ConfigSource {
 		}
 	}
 	return source
-}
-
-func makeTypedExtensionProtocolOptions() map[string]*anypb.Any {
-	httpProtocolOptions, err := anypb.New(&ext_http.HttpProtocolOptions{
-		UpstreamProtocolOptions: &ext_http.HttpProtocolOptions_ExplicitHttpConfig_{
-			ExplicitHttpConfig: &ext_http.HttpProtocolOptions_ExplicitHttpConfig{
-				ProtocolConfig: &ext_http.HttpProtocolOptions_ExplicitHttpConfig_Http2ProtocolOptions{
-					Http2ProtocolOptions: &core.Http2ProtocolOptions{},
-				},
-			},
-		},
-	})
-	if httpProtocolOptions == nil && err != nil {
-		panic(err)
-	}
-
-	return map[string]*anypb.Any{
-		"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": httpProtocolOptions,
-	}
 }
