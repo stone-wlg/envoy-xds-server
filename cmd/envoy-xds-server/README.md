@@ -3,6 +3,7 @@
 $ go run ./cmd/envoy-xds-server/main.go --configFile ./config.yaml
 $ go run ./cmd/envoy-xds-server/main.go --configFile ./1000.yaml
 $ go run ./cmd/envoy-xds-server/main.go --configFile ./2000.yaml
+$ go run ./cmd/envoy-xds-server/main.go --configFile ./3000.yaml
 
 $ ./bin/envoy-xds-server --configFile ./config.yaml
 $ ./bin/envoy-xds-server --configFile ./1000.yaml
