@@ -13,6 +13,7 @@ type XDSServerConfig struct {
 		Name   string `yaml:"name"`
 		Module string `yaml:"module"`
 		Mode   string `yaml:"mode"`
+		Port   uint32 `yaml:"port"`
 	}
 
 	Secret struct {

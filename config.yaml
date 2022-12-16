@@ -1,5 +1,5 @@
 peer:
-  id: 1000
+  id: "1000"
   port: 18000
   refresh_interval: 60
 
@@ -8,18 +8,22 @@ features:
     name: fedx-postman
     module: fedx
     mode: http
+    port: 8081
   - index: 2
     name: fateflow
     module: fate
     mode: tcp
+    port: 9380
   - index: 3
     name: pulsar
     module: fate
     mode: tcp
+    port: 6650
   - index: 4
-    name: fate-serving
-    module: fate-serving
+    name: serving-proxy
+    module: serving-proxy
     mode: tcp
+    port: 8869
 
 secret:
   sds_config_cluster_name: xds-cluster

@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	alf "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
@@ -37,20 +35,21 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 
 	for _, peer := range peers {
 		if peer.Id == config.Peer.Id {
-			listeners = append(listeners, makePeerListener(config, peer))
-			routes = append(routes, makeRouteConfig(config, services))
+			listeners = append(listeners, makeLocalPeerListener(config, peer))
+			routes = append(routes, makeLocalPeerRouteConfig(config, services))
+			clusters = append(clusters, makeLocalPeerClusters(config, peer)...)
 		} else {
-			listeners = append(listeners, makePeerFeaturesListeners(config, peer)...)
-			clusters = append(clusters, makeClusterForPeer(config, peer))
+			listeners = append(listeners, makeRemotePeerListeners(config, peer)...)
+			clusters = append(clusters, makeRemotePeerCluster(config, peer))
 		}
 		secrets = append(secrets, makeSecrets(peer)...)
 	}
 
 	for _, service := range services {
-		if service.PeerId != config.Peer.Id {
-			listeners = append(listeners, makeServiceListener(service))
+		if service.PeerId == config.Peer.Id {
+			clusters = append(clusters, makeLocalServiceCluster(service))
 		} else {
-			clusters = append(clusters, makeClusterForService(service))
+			listeners = append(listeners, makeRemoteServiceListener(service))
 		}
 	}
 
@@ -66,7 +65,7 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 	return snapshot
 }
 
-func makePeerListener(config *XDSServerConfig, peer *Peer) *listener.Listener {
+func makeLocalPeerListener(config *XDSServerConfig, peer *Peer) *listener.Listener {
 	name := fmt.Sprintf("peer-%s", peer.Id)
 	routerConfig, _ := anypb.New(&router.Router{})
 
@@ -119,20 +118,20 @@ func makePeerListener(config *XDSServerConfig, peer *Peer) *listener.Listener {
 	return makeListener(name, peer.Port, filterChains)
 }
 
-func makeRouteConfig(config *XDSServerConfig, services []*Service) *route.RouteConfiguration {
+func makeLocalPeerRouteConfig(config *XDSServerConfig, services []*Service) *route.RouteConfiguration {
 	var virtualHosts []*route.VirtualHost
 	for _, service := range services {
-		if service.PeerId != config.Peer.Id {
-			continue
+		if service.PeerId == config.Peer.Id {
+			virtualHosts = append(virtualHosts, makeVirtualHostWithConnectMatcher(service.Host))
 		}
-		virtualHosts = append(virtualHosts, makeVirtualHostWithConnectMatcher(service.Host))
 	}
 
 	for _, feature := range config.Features {
+		name := fmt.Sprintf("%s-%s%s", feature.Name, config.Peer.Id, feature.Index)
 		if feature.Mode == "tcp" {
-			virtualHosts = append(virtualHosts, makeVirtualHostWithConnectMatcher(feature.Name))
+			virtualHosts = append(virtualHosts, makeVirtualHostWithConnectMatcher(name))
 		} else {
-			virtualHosts = append(virtualHosts, makeVirtualHostWithPrefix(feature.Name))
+			virtualHosts = append(virtualHosts, makeVirtualHostWithPrefix(name))
 		}
 	}
 
@@ -142,7 +141,25 @@ func makeRouteConfig(config *XDSServerConfig, services []*Service) *route.RouteC
 	}
 }
 
-func makePeerFeaturesListeners(config *XDSServerConfig, peer *Peer) []types.Resource {
+func makeLocalPeerClusters(config *XDSServerConfig, peer *Peer) []types.Resource {
+	var clusters []types.Resource
+
+	for _, feature := range config.Features {
+		name := fmt.Sprintf("%s-%s%s", feature.Name, config.Peer.Id, feature.Index)
+		serviceName := fmt.Sprintf("%s.%s-%s", feature.Name, feature.Module, peer.Id)
+		clusters = append(clusters, &cluster.Cluster{
+			Name:                          name,
+			ClusterDiscoveryType:          &cluster.Cluster_Type{Type: cluster.Cluster_STRICT_DNS},
+			DnsLookupFamily:               cluster.Cluster_V4_ONLY,
+			TypedExtensionProtocolOptions: makeTypedExtensionProtocolOptions(),
+			LoadAssignment:                makeEndpoint(name, serviceName, feature.Port),
+			TransportSocket:               makeTransportSocketForUpstream(config, peer),
+		})
+	}
+	return clusters
+}
+
+func makeRemotePeerListeners(config *XDSServerConfig, peer *Peer) []types.Resource {
 	var listeners []types.Resource
 	for _, feature := range config.Features {
 		portStr := fmt.Sprintf("%s%s", peer.Id, feature.Index)
@@ -190,6 +207,111 @@ func makePeerFeaturesListeners(config *XDSServerConfig, peer *Peer) []types.Reso
 		listeners = append(listeners, makeListener(name, uint32(port), filterChains))
 	}
 	return listeners
+}
+
+func makeRemotePeerCluster(config *XDSServerConfig, peer *Peer) *cluster.Cluster {
+	name := fmt.Sprintf("peer-%s", peer.Id)
+
+	return &cluster.Cluster{
+		Name:                          name,
+		ClusterDiscoveryType:          &cluster.Cluster_Type{Type: cluster.Cluster_STRICT_DNS},
+		DnsLookupFamily:               cluster.Cluster_V4_ONLY,
+		TypedExtensionProtocolOptions: makeTypedExtensionProtocolOptions(),
+		LoadAssignment:                makeEndpoint(name, peer.Host, peer.Port),
+		TransportSocket:               makeTransportSocketForUpstream(config, peer),
+	}
+}
+
+func makeTransportSocketForUpstream(config *XDSServerConfig, peer *Peer) *core.TransportSocket {
+	tlsRootCaName := config.Secret.TlsRootCaDefaultName
+	if peer.tlsRootCa != "" {
+		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.Id)
+	}
+
+	tlsPrivateCaName := config.Secret.TlsPrivateCaDefaultName
+	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
+		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.Id)
+	}
+
+	sdsConfig := configSource("xds", config.Secret.SdsConfigClusterName)
+
+	tlsc := &auth.UpstreamTlsContext{
+		CommonTlsContext: &auth.CommonTlsContext{
+			TlsCertificateSdsSecretConfigs: []*auth.SdsSecretConfig{{
+				Name:      tlsPrivateCaName,
+				SdsConfig: sdsConfig,
+			}},
+			ValidationContextType: &auth.CommonTlsContext_ValidationContextSdsSecretConfig{
+				ValidationContextSdsSecretConfig: &auth.SdsSecretConfig{
+					Name:      tlsRootCaName,
+					SdsConfig: sdsConfig,
+				},
+			},
+		},
+	}
+
+	mt, _ := anypb.New(tlsc)
+	return &core.TransportSocket{
+		Name: wellknown.TransportSocketTLS,
+		ConfigType: &core.TransportSocket_TypedConfig{
+			TypedConfig: mt,
+		},
+	}
+}
+
+func makeLocalServiceCluster(service *Service) *cluster.Cluster {
+	return &cluster.Cluster{
+		Name:                          service.Host,
+		ClusterDiscoveryType:          &cluster.Cluster_Type{Type: cluster.Cluster_STRICT_DNS},
+		DnsLookupFamily:               cluster.Cluster_V4_ONLY,
+		TypedExtensionProtocolOptions: makeTypedExtensionProtocolOptions(),
+		LoadAssignment:                makeEndpoint(service.Host, service.Host, service.Port),
+	}
+}
+
+func makeRemoteServiceListener(service *Service) *listener.Listener {
+	name := fmt.Sprintf("peer-%s", service.PeerId)
+	stdoutAccessLog, err := anypb.New(&access_loggers.StdoutAccessLog{})
+	if err != nil {
+		panic(err)
+	}
+
+	config := &tcp.TcpProxy{
+		StatPrefix: service.Host,
+		ClusterSpecifier: &tcp.TcpProxy_Cluster{
+			Cluster: name,
+		},
+		TunnelingConfig: &tcp.TcpProxy_TunnelingConfig{
+			Hostname: service.Host,
+		},
+		AccessLog: []*alf.AccessLog{{
+			Name: "envoy.access_loggers.stdout",
+			ConfigType: &alf.AccessLog_TypedConfig{
+				TypedConfig: stdoutAccessLog,
+			},
+		},
+		},
+	}
+	pbst, err := anypb.New(config)
+	if err != nil {
+		log.Fatal(err)
+		panic(err)
+	}
+
+	filterChains := []*listener.FilterChain{
+		{
+			Filters: []*listener.Filter{
+				{
+					Name: wellknown.HTTPConnectionManager,
+					ConfigType: &listener.Filter_TypedConfig{
+						TypedConfig: pbst,
+					},
+				},
+			},
+		},
+	}
+
+	return makeListener(service.Host, service.Port, filterChains)
 }
 
 func makeVirtualHostWithConnectMatcher(name string) *route.VirtualHost {
@@ -300,51 +422,6 @@ func makeDefaultSecrets(config *XDSServerConfig) []types.Resource {
 	return secrets
 }
 
-func makeServiceListener(service *Service) *listener.Listener {
-	name := fmt.Sprintf("peer-%s", service.PeerId)
-	stdoutAccessLog, err := anypb.New(&access_loggers.StdoutAccessLog{})
-	if err != nil {
-		panic(err)
-	}
-
-	config := &tcp.TcpProxy{
-		StatPrefix: service.Host,
-		ClusterSpecifier: &tcp.TcpProxy_Cluster{
-			Cluster: name,
-		},
-		TunnelingConfig: &tcp.TcpProxy_TunnelingConfig{
-			Hostname: service.Host,
-		},
-		AccessLog: []*alf.AccessLog{{
-			Name: "envoy.access_loggers.stdout",
-			ConfigType: &alf.AccessLog_TypedConfig{
-				TypedConfig: stdoutAccessLog,
-			},
-		},
-		},
-	}
-	pbst, err := anypb.New(config)
-	if err != nil {
-		log.Fatal(err)
-		panic(err)
-	}
-
-	filterChains := []*listener.FilterChain{
-		{
-			Filters: []*listener.Filter{
-				{
-					Name: wellknown.HTTPConnectionManager,
-					ConfigType: &listener.Filter_TypedConfig{
-						TypedConfig: pbst,
-					},
-				},
-			},
-		},
-	}
-
-	return makeListener(service.Host, service.Port, filterChains)
-}
-
 func makeListener(name string, port uint32, filterChains []*listener.FilterChain) *listener.Listener {
 	return &listener.Listener{
 		Name: name,
@@ -360,21 +437,6 @@ func makeListener(name string, port uint32, filterChains []*listener.FilterChain
 			},
 		},
 		FilterChains: filterChains,
-	}
-}
-
-func makeClusterForPeer(config *XDSServerConfig, peer *Peer) *cluster.Cluster {
-	name := fmt.Sprintf("peer-%s", peer.Id)
-
-	return &cluster.Cluster{
-		Name:                          name,
-		ConnectTimeout:                durationpb.New(5 * time.Second),
-		ClusterDiscoveryType:          &cluster.Cluster_Type{Type: cluster.Cluster_STRICT_DNS},
-		LbPolicy:                      cluster.Cluster_ROUND_ROBIN,
-		DnsLookupFamily:               cluster.Cluster_V4_ONLY,
-		TypedExtensionProtocolOptions: makeTypedExtensionProtocolOptions(),
-		LoadAssignment:                makeEndpoint(name, peer.Host, peer.Port),
-		TransportSocket:               makeTransportSocketForUpstream(config, peer),
 	}
 }
 
@@ -419,55 +481,6 @@ func makeEndpoint(clusterName string, host string, port uint32) *endpoint.Cluste
 				},
 			}},
 		}},
-	}
-}
-
-func makeTransportSocketForUpstream(config *XDSServerConfig, peer *Peer) *core.TransportSocket {
-	tlsRootCaName := config.Secret.TlsRootCaDefaultName
-	if peer.tlsRootCa != "" {
-		tlsRootCaName = fmt.Sprintf("tls-root-ca-%s", peer.Id)
-	}
-
-	tlsPrivateCaName := config.Secret.TlsPrivateCaDefaultName
-	if peer.tlsPrivateKey != "" && peer.tlsPrivateCa != "" {
-		tlsPrivateCaName = fmt.Sprintf("tls-private-ca-%s", peer.Id)
-	}
-
-	sdsConfig := configSource("xds", config.Secret.SdsConfigClusterName)
-
-	tlsc := &auth.UpstreamTlsContext{
-		CommonTlsContext: &auth.CommonTlsContext{
-			TlsCertificateSdsSecretConfigs: []*auth.SdsSecretConfig{{
-				Name:      tlsPrivateCaName,
-				SdsConfig: sdsConfig,
-			}},
-			ValidationContextType: &auth.CommonTlsContext_ValidationContextSdsSecretConfig{
-				ValidationContextSdsSecretConfig: &auth.SdsSecretConfig{
-					Name:      tlsRootCaName,
-					SdsConfig: sdsConfig,
-				},
-			},
-		},
-	}
-
-	mt, _ := anypb.New(tlsc)
-	return &core.TransportSocket{
-		Name: wellknown.TransportSocketTLS,
-		ConfigType: &core.TransportSocket_TypedConfig{
-			TypedConfig: mt,
-		},
-	}
-}
-
-func makeClusterForService(service *Service) *cluster.Cluster {
-	return &cluster.Cluster{
-		Name:                          service.Host,
-		ConnectTimeout:                durationpb.New(5 * time.Second),
-		ClusterDiscoveryType:          &cluster.Cluster_Type{Type: cluster.Cluster_STRICT_DNS},
-		LbPolicy:                      cluster.Cluster_ROUND_ROBIN,
-		DnsLookupFamily:               cluster.Cluster_V4_ONLY,
-		TypedExtensionProtocolOptions: makeTypedExtensionProtocolOptions(),
-		LoadAssignment:                makeEndpoint(service.Host, service.Host, service.Port),
 	}
 }
 

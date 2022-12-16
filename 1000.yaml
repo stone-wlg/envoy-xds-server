@@ -1,7 +1,29 @@
 peer:
-  id: 1000
-  port: 18001
+  id: "1000"
+  port: 18010
   refresh_interval: 60
+
+features:
+  - index: 1
+    name: fedx-postman
+    module: fedx
+    mode: http
+    port: 8081
+  - index: 2
+    name: fateflow
+    module: fate
+    mode: tcp
+    port: 9380
+  - index: 3
+    name: pulsar
+    module: fate
+    mode: tcp
+    port: 6650
+  - index: 4
+    name: serving-proxy
+    module: serving-proxy
+    mode: tcp
+    port: 8869
 
 secret:
   sds_config_cluster_name: xds-cluster
@@ -52,7 +74,7 @@ secret:
     BmI0BrJm23jo/BvaZ2RhzwIYm13Rm2icDk6Dm0jkT/Jderlod4JdK+SlhwCcC37F
     utqsqiixnQrDU/Iax1TD0aop/v+QH1lLDIy3FEHj421GZ2saDZ+N691pOuTHjcxQ
     4gJvDXECU9GUPu6lWZXjmqFi
-    -----END CERTIFICATE-----  
+    -----END CERTIFICATE-----
   default_private_ca: |-
     -----BEGIN CERTIFICATE-----
     MIID3zCCAsegAwIBAgIUZWT/fTz7kny/z1T8toDgMyROVcQwDQYJKoZIhvcNAQEL
@@ -76,19 +98,19 @@ secret:
     S51iO1kX77UWEzpDpm/Z95ujSTxltIOp97elhetPebvWXa8fmB0eEcDZRWzaA9fF
     5Dwaeyqws0ryqE1GapkDxyhkOCLZ7wc6T7QJd4y99Ed5c4wFYZaJFuJ5y2Z06y9o
     Iwp8M2W2xljujax+3aZuc7wDAcqmOQPgUBBUEDlTjMGgFeU=
-    -----END CERTIFICATE-----  
+    -----END CERTIFICATE-----
   default_private_key: |-
     -----BEGIN EC PRIVATE KEY-----
     MHcCAQEEIBhxmxueLxxmDkhVE7umMhUIUTSNaX34cMGUFbj73Mu0oAoGCCqGSM49
     AwEHoUQDQgAE/Z1XoAVtc08mvtPgJioXzPji0nCusOdNXj7f/VTs+CZ6KiNy8Ja6
     MbhTOmF/7rVtQT2JJV6Nig+ACEZdFBixTw==
-    -----END EC PRIVATE KEY-----  
+    -----END EC PRIVATE KEY-----
 
 mysql:
   host: "192.168.10.10"
   port: 3306
   user: root
   password: root
-  database: fedx-pir-1000
-  peer_sql: "SELECT party_id, mode, host, port, tls_root_ca, tls_private_key, tls_private_ca FROM peer WHERE is_deleted = FALSE"
-  service_sql: "SELECT party_id, mode, host, port FROM service WHERE is_deleted = FALSE"
+  database: fedx-1000
+  peer_sql: "SELECT id, mode, host, port, tls_root_ca, tls_private_key, tls_private_ca FROM peer WHERE is_deleted = FALSE"
+  service_sql: "SELECT id, mode, host, port, peer_id FROM service WHERE is_deleted = FALSE"
