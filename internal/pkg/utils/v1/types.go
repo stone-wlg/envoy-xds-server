@@ -8,15 +8,8 @@ type XDSServerConfig struct {
 		RefreshInterval uint64 `yaml:"refresh_interval"`
 	}
 
-	Features []*struct {
-		Index  string `yaml:"index"`
-		Name   string `yaml:"name"`
-		Module string `yaml:"module"`
-		Mode   string `yaml:"mode"`
-		Port   uint32 `yaml:"port"`
-	}
-
 	Secret struct {
+		Enabled                 bool   `yaml:"enabled"`
 		SdsConfigClusterName    string `yaml:"sds_config_cluster_name"`
 		TlsRootCaDefaultName    string `yaml:"tls_root_ca_default_name"`
 		TlsPrivateCaDefaultName string `yaml:"tls_private_ca_default_name"`
@@ -47,9 +40,10 @@ type Peer struct {
 }
 
 type Service struct {
-	Id     string
-	Mode   string
-	Host   string
-	Port   uint32
-	PeerId string
+	Id         string
+	PeerId     string
+	Mode       string
+	Host       string
+	Port       uint32
+	TargetPort uint32
 }

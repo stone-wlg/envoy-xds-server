@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS `peer`(
   `id` VARCHAR(255) NOT NULL,
   `mode` ENUM('tcp','http') NOT NULL DEFAULT 'tcp',
   `host` VARCHAR(255) NOT NULL DEFAULT '0.0.0.0',
-  `port` INT NOT NULL DEFAULT 10000,
+  `port` INT NOT NULL DEFAULT 0,
   `tls_root_ca` TEXT,
   `tls_private_key` TEXT,
   `tls_private_ca` TEXT,
@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS `service`(
   `peer_id` VARCHAR(255) NOT NULL,  
   `mode` ENUM('tcp','http') NOT NULL DEFAULT 'tcp',
   `host` VARCHAR(255) NOT NULL DEFAULT '0.0.0.0',
-  `port` INT NOT NULL DEFAULT 10000,  
+  `port` INT NOT NULL DEFAULT 0, 
+  `target_port` INT NOT NULL DEFAULT 0, 
   `is_deleted` BOOLEAN NOT NULL DEFAULT FALSE
 );
 
@@ -160,12 +161,19 @@ USE `fedx-1000`;
 USE `fedx-2000`;
 USE `fedx-2100`;
 TRUNCATE `service`;
-INSERT INTO `service` VALUES (11, '1000', 'tcp', 'fedx-tcp', 10011, FALSE);
-INSERT INTO `service` VALUES (12, '1000', 'http', 'fedx-http', 10012, FALSE);
-INSERT INTO `service` VALUES (13, '2000', 'tcp', 'fedx-tcp', 20011, FALSE);
-INSERT INTO `service` VALUES (14, '2000', 'http', 'fedx-http', 20012, FALSE);
-INSERT INTO `service` VALUES (15, '2100', 'tcp', 'fedx-tcp', 21011, FALSE);
-INSERT INTO `service` VALUES (16, '2100', 'http', 'fedx-http', 21012, FALSE);
+
+INSERT INTO `service` VALUES (10001, '1000', 'http', 'fedx-postman.fedx-1000', 10001, 8081, FALSE);
+INSERT INTO `service` VALUES (10002, '1000', 'tcp', 'fateflow.fate-1000', 10002, 9380, FALSE);
+INSERT INTO `service` VALUES (10003, '1000', 'tcp', 'pulsar.fate-1000', 10003, 6650, FALSE);
+INSERT INTO `service` VALUES (10004, '1000', 'tcp', 'serving-proxy.fate-serving-1000', 10004, 8869, FALSE);
+INSERT INTO `service` VALUES (20001, '2000', 'http', 'fedx-postman.fedx-2000', 20001, 8081, FALSE);
+INSERT INTO `service` VALUES (20002, '2000', 'tcp', 'fateflow.fate-2000', 20002, 9380, FALSE);
+INSERT INTO `service` VALUES (20003, '2000', 'tcp', 'pulsar.fate-2000', 20003, 6650, FALSE);
+INSERT INTO `service` VALUES (20004, '2000', 'tcp', 'serving-proxy.fate-serving-2000', 20004, 8869, FALSE);
+INSERT INTO `service` VALUES (21001, '2100', 'http', 'fedx-postman.fedx-2100', 21001, 8081, FALSE);
+INSERT INTO `service` VALUES (21002, '2100', 'tcp', 'fateflow.fate-2100', 21002, 9380, FALSE);
+INSERT INTO `service` VALUES (21003, '2100', 'tcp', 'pulsar.fate-2100', 21003, 6650, FALSE);
+INSERT INTO `service` VALUES (21004, '2100', 'tcp', 'serving-proxy.fate-serving-2100', 21004, 8869, FALSE);
 
 SELECT * FROM `peer`;
 SELECT * FROM `service`;
