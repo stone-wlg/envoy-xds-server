@@ -44,6 +44,7 @@ func GenerateSnapshots(config *XDSServerConfig, peers []*Peer, services []*Servi
 
 	for _, service := range services {
 		if service.PeerId == config.Peer.Id {
+			listeners = append(listeners, makeLocalServiceListener(service))
 			clusters = append(clusters, makeLocalServiceCluster(service))
 		} else {
 			listeners = append(listeners, makeRemoteServiceListener(service))
@@ -241,6 +242,50 @@ func makeLocalServiceCluster(service *Service) *cluster.Cluster {
 		TypedExtensionProtocolOptions: makeTypedExtensionProtocolOptions(service.Mode),
 		LoadAssignment:                makeEndpoint(service.Host, service.Host, service.TargetPort),
 	}
+}
+
+func makeLocalServiceListener(service *Service) *listener.Listener {
+	stdoutAccessLog, err := anypb.New(&access_loggers.StdoutAccessLog{})
+	if err != nil {
+		panic(err)
+	}
+
+	config := &tcp.TcpProxy{
+		StatPrefix: service.Host,
+		ClusterSpecifier: &tcp.TcpProxy_Cluster{
+			Cluster: service.Host,
+		},
+		// TunnelingConfig: &tcp.TcpProxy_TunnelingConfig{
+		// 	Hostname: service.Host,
+		// },
+		AccessLog: []*alf.AccessLog{{
+			Name: "envoy.access_loggers.stdout",
+			ConfigType: &alf.AccessLog_TypedConfig{
+				TypedConfig: stdoutAccessLog,
+			},
+		},
+		},
+	}
+	pbst, err := anypb.New(config)
+	if err != nil {
+		log.Fatal(err)
+		panic(err)
+	}
+
+	filterChains := []*listener.FilterChain{
+		{
+			Filters: []*listener.Filter{
+				{
+					Name: wellknown.TCPProxy,
+					ConfigType: &listener.Filter_TypedConfig{
+						TypedConfig: pbst,
+					},
+				},
+			},
+		},
+	}
+
+	return makeListener(service.Host, service.Port, filterChains)
 }
 
 func makeRemoteServiceListener(service *Service) *listener.Listener {
