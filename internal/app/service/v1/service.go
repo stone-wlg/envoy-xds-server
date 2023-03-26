@@ -19,6 +19,7 @@ func init() {
 }
 
 func RunServer(config *utils.XDSServerConfig) {
+	// Init database
 	err := utils.InitDatabase(config)
 	if err != nil {
 		panic(err.Error())
